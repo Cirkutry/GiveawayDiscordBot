@@ -16,41 +16,78 @@ read -p "Discord Bot Token: " BOT_TOKEN
 read -p "Database Password: " DB_PASSWORD
 read -p "Database Root Password: " DB_ROOT_PASSWORD
 
+# Set default port
+DB_PORT=3306
+
 # Check if port 3306 is already in use
-if netstat -tuln | grep -q ":3306 "; then
-  echo -e "${YELLOW}Port 3306 is already in use. This might be another MySQL/MariaDB instance.${NC}"
-  echo -e "Would you like to:"
-  echo -e "1) Use a different port for the database container"
-  echo -e "2) Attempt to stop the existing service on port 3306"
-  echo -e "3) Exit and resolve manually"
-  read -p "Enter your choice (1/2/3): " PORT_CHOICE
-  
-  case $PORT_CHOICE in
-    1)
-      read -p "Enter an alternative port to use (e.g., 3307): " DB_PORT
-      ;;
-    2)
-      echo -e "${YELLOW}Attempting to stop existing MySQL/MariaDB service...${NC}"
-      systemctl stop mysql mariadb 2>/dev/null || service mysql stop 2>/dev/null || service mariadb stop 2>/dev/null
-      if netstat -tuln | grep -q ":3306 "; then
-        echo -e "${RED}Failed to stop the service on port 3306. Please resolve manually.${NC}"
+if command -v netstat > /dev/null 2>&1; then
+  if netstat -tuln | grep -q ":3306 "; then
+    echo -e "${YELLOW}Port 3306 is already in use. This might be another MySQL/MariaDB instance.${NC}"
+    echo -e "Would you like to:"
+    echo -e "1) Use a different port for the database container"
+    echo -e "2) Attempt to stop the existing service on port 3306"
+    echo -e "3) Exit and resolve manually"
+    read -p "Enter your choice (1/2/3): " PORT_CHOICE
+    
+    case $PORT_CHOICE in
+      1)
+        read -p "Enter an alternative port to use (e.g., 3307): " DB_PORT
+        ;;
+      2)
+        echo -e "${YELLOW}Attempting to stop existing MySQL/MariaDB service...${NC}"
+        systemctl stop mysql mariadb 2>/dev/null || service mysql stop 2>/dev/null || service mariadb stop 2>/dev/null
+        if netstat -tuln | grep -q ":3306 "; then
+          echo -e "${RED}Failed to stop the service on port 3306. Please resolve manually.${NC}"
+          exit 1
+        else
+          echo -e "${GREEN}Successfully stopped the service on port 3306.${NC}"
+          DB_PORT=3306
+        fi
+        ;;
+      3)
+        echo -e "${YELLOW}Exiting. Please resolve the port conflict manually.${NC}"
+        exit 0
+        ;;
+      *)
+        echo -e "${RED}Invalid option. Exiting.${NC}"
         exit 1
-      else
-        echo -e "${GREEN}Successfully stopped the service on port 3306.${NC}"
-        DB_PORT=3306
-      fi
-      ;;
-    3)
-      echo -e "${YELLOW}Exiting. Please resolve the port conflict manually.${NC}"
-      exit 0
-      ;;
-    *)
-      echo -e "${RED}Invalid option. Exiting.${NC}"
-      exit 1
-      ;;
-  esac
-else
-  DB_PORT=3306
+        ;;
+    esac
+  fi
+elif command -v ss > /dev/null 2>&1; then
+  if ss -tuln | grep -q ":3306 "; then
+    echo -e "${YELLOW}Port 3306 is already in use. This might be another MySQL/MariaDB instance.${NC}"
+    echo -e "Would you like to:"
+    echo -e "1) Use a different port for the database container"
+    echo -e "2) Attempt to stop the existing service on port 3306"
+    echo -e "3) Exit and resolve manually"
+    read -p "Enter your choice (1/2/3): " PORT_CHOICE
+    
+    case $PORT_CHOICE in
+      1)
+        read -p "Enter an alternative port to use (e.g., 3307): " DB_PORT
+        ;;
+      2)
+        echo -e "${YELLOW}Attempting to stop existing MySQL/MariaDB service...${NC}"
+        systemctl stop mysql mariadb 2>/dev/null || service mysql stop 2>/dev/null || service mariadb stop 2>/dev/null
+        if ss -tuln | grep -q ":3306 "; then
+          echo -e "${RED}Failed to stop the service on port 3306. Please resolve manually.${NC}"
+          exit 1
+        else
+          echo -e "${GREEN}Successfully stopped the service on port 3306.${NC}"
+          DB_PORT=3306
+        fi
+        ;;
+      3)
+        echo -e "${YELLOW}Exiting. Please resolve the port conflict manually.${NC}"
+        exit 0
+        ;;
+      *)
+        echo -e "${RED}Invalid option. Exiting.${NC}"
+        exit 1
+        ;;
+    esac
+  fi
 fi
 
 # Clean up any existing setup
@@ -94,7 +131,7 @@ EOL
 
 chmod +x wait-for-db.sh
 
-# Create docker-compose.yml
+# Create docker-compose.yml - Hardcoding values instead of using variable substitution to avoid issues
 cat > docker-compose.yml << EOL
 services:
   db:
@@ -102,10 +139,10 @@ services:
     container_name: giveaway_db
     restart: always
     environment:
-      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
-      - MARIADB_DATABASE=giveaway_db
-      - MARIADB_USER=giveaway_user
-      - MARIADB_PASSWORD=${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+      MARIADB_DATABASE: giveaway_db
+      MARIADB_USER: giveaway_user
+      MARIADB_PASSWORD: "${DB_PASSWORD}"
     volumes:
       - giveaway_db_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -113,7 +150,7 @@ services:
     ports:
       - "${DB_PORT}:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MARIADB_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -126,7 +163,7 @@ services:
         condition: service_healthy
     volumes:
       - ./wait-for-db.sh:/wait-for-db.sh
-    command: /wait-for-db.sh db root ${DB_ROOT_PASSWORD} giveaway_db
+    command: /wait-for-db.sh db root "${DB_ROOT_PASSWORD}" giveaway_db
     restart: "no"
 
   giveaway:
@@ -136,10 +173,10 @@ services:
     volumes:
       - ./giveaway_logs:/app/logs
     environment:
-      - DATABASE_URL=jdbc:mariadb://db:3306/giveaway_db?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&rewriteBatchedStatements=true
-      - DATABASE_USER=giveaway_user
-      - DATABASE_PASS=${DB_PASSWORD}
-      - TOKEN=${BOT_TOKEN}
+      DATABASE_URL: "jdbc:mariadb://db:3306/giveaway_db?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&rewriteBatchedStatements=true"
+      DATABASE_USER: "giveaway_user"
+      DATABASE_PASS: "${DB_PASSWORD}"
+      TOKEN: "${BOT_TOKEN}"
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -148,10 +185,10 @@ volumes:
   giveaway_db_data:
 EOL
 
-# Create init.sql from the schema - Fixed version to prevent bash parsing errors
-cat > init.sql << 'EOL'
-CREATE TABLE IF NOT EXISTS `active_giveaways`
-(
+# Create init.sql safely with here-document to avoid bash parsing the SQL content
+cat > init.sql << 'EOSQL'
+-- Create tables if they don't exist
+CREATE TABLE IF NOT EXISTS `active_giveaways` (
     `count_winners`        int(11) DEFAULT NULL,
     `finish`               bit(1) NOT NULL,
     `is_for_specific_role` bit(1)       DEFAULT NULL,
@@ -166,8 +203,7 @@ CREATE TABLE IF NOT EXISTS `active_giveaways`
     `url_image`            varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `list_users`
-(
+CREATE TABLE IF NOT EXISTS `list_users` (
     `created_user_id` bigint(20) NOT NULL,
     `giveaway_id`     bigint(20) NOT NULL,
     `guild_id`        bigint(20) NOT NULL,
@@ -177,16 +213,14 @@ CREATE TABLE IF NOT EXISTS `list_users`
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `notification`
-(
+CREATE TABLE IF NOT EXISTS `notification` (
     `user_id_long`        varchar(255) NOT NULL,
     `notification_status` enum('ACCEPT','DENY') NOT NULL,
     PRIMARY KEY (`user_id_long`),
     UNIQUE KEY `user_id_long` (`user_id_long`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `participants`
-(
+CREATE TABLE IF NOT EXISTS `participants` (
     `id`         bigint(20) NOT NULL AUTO_INCREMENT,
     `message_id` bigint(20) NOT NULL,
     `user_id`    bigint(20) NOT NULL,
@@ -195,8 +229,7 @@ CREATE TABLE IF NOT EXISTS `participants`
     KEY `FK5wwgegod4ejelbpml5lgnic9b` (`message_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci AUTO_INCREMENT=2004;
 
-CREATE TABLE IF NOT EXISTS `scheduling`
-(
+CREATE TABLE IF NOT EXISTS `scheduling` (
     `count_winners`        int(11) DEFAULT NULL,
     `is_for_specific_role` bit(1)       DEFAULT NULL,
     `min_participants`     int(11) DEFAULT NULL,
@@ -212,8 +245,7 @@ CREATE TABLE IF NOT EXISTS `scheduling`
     PRIMARY KEY (`id_salt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `settings`
-(
+CREATE TABLE IF NOT EXISTS `settings` (
     `server_id` bigint(20) NOT NULL,
     `color_hex` varchar(255) DEFAULT NULL,
     `language`  varchar(255) NOT NULL,
@@ -221,11 +253,10 @@ CREATE TABLE IF NOT EXISTS `settings`
     PRIMARY KEY (`server_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Add the foreign key if it doesn't exist
-ALTER TABLE `active_giveaways`
-    ADD PRIMARY KEY IF NOT EXISTS (`message_id`);
+-- Add the primary key to active_giveaways if it doesn't exist
+ALTER TABLE `active_giveaways` ADD PRIMARY KEY IF NOT EXISTS (`message_id`);
 
--- Check if foreign key exists before adding it
+-- Check if foreign key exists before adding it (safer SQL approach)
 SET @exist := (
     SELECT COUNT(1) constraint_exists
     FROM information_schema.table_constraints 
@@ -240,9 +271,7 @@ SET @sqlstmt := IF(@exist = 0,
 PREPARE stmt FROM @sqlstmt;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
-
-COMMIT;
-EOL
+EOSQL
 
 echo -e "\n${GREEN}Configuration files created successfully.${NC}"
 echo -e "Starting the containers..."
