@@ -3,7 +3,7 @@ version: '3'
 services:
   giveaway:
     container_name: giveaway_bot
-    image: megoru/giveaway:latest
+    image: cirkutry/nobrand-giveaway:latest
     restart: always
     volumes:
       - ./giveaway_logs:/app/logs

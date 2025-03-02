@@ -3,24 +3,28 @@ name: CI/CD
 on:
   push:
     branches:
-      - 'main'
+      - 'nobrand'
 
 jobs:
 
   build:
     runs-on: ubuntu-22.04
     steps:
-      #     Build Docker image:
+      # Checkout the repository
       - uses: actions/checkout@v4
+
+      # Build and tag image
       - name: Build and tag image
         run: |
-          docker build -t megoru/giveaway:latest .
-      #     Login to Docker Hub:
+          docker build -t cirkutry/nobrand-giveaway:latest .
+
+      # Login to Docker Hub
       - name: Docker login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      #     Push image to Docker Hub:
+
+      # Push image to Docker Hub
       - name: Publish image
-        run: docker push megoru/giveaway:latest
+        run: docker push cirkutry/nobrand-giveaway:latest

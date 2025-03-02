@@ -63,15 +63,10 @@ public class HelpCommand {
                         helpPermissions,
                         helpEdit,
                         helpEndMessage), false);
-        String messagesEventsLinks = jsonParsers.getLocale("messages_events_links", guildId);
-        String messagesEventsSite = jsonParsers.getLocale("messages_events_site", guildId);
-        String messagesEventsAddMeToOtherGuilds = jsonParsers.getLocale("messages_events_add_me_to_other_guilds", guildId);
 
-        info.addField(messagesEventsLinks, messagesEventsSite + messagesEventsAddMeToOtherGuilds, false);
+        info.addField(messagesEventsLinks, messagesEventsAddMeToOtherGuilds, false);
 
-        List<Button> buttons = new ArrayList<>();
-        buttons.add(Button.link("https://discord.gg/UrWG3R683d", "Support"));
+        event.replyEmbeds(info.build()).setEphemeral(true).queue();
 
-        event.replyEmbeds(info.build()).setEphemeral(true).addActionRow(buttons).queue();
     }
 }

@@ -6,7 +6,7 @@ Fork without branding to make it nicer to self-host :)
 
 1. Run `setup.sh` and fill in your details:
 ```
-bash -c "$(wget -qO- https://raw.githubusercontent.com/Cirkutry/GiveawayDiscordBot/refs/heads/remove-branding/setup.sh)"
+bash -c "$(wget -qO- https://raw.githubusercontent.com/Cirkutry/GiveawayDiscordBot/refs/heads/nobrand/setup.sh)"
 ```
 2. If you need to update the repository: `docker compose pull`
 3. If you need to stop: `docker compose stop`
