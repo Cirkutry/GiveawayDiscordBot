@@ -64,8 +64,6 @@ public class HelpCommand {
                         helpEdit,
                         helpEndMessage), false);
 
-        info.addField(messagesEventsLinks, messagesEventsAddMeToOtherGuilds, false);
-
         event.replyEmbeds(info.build()).setEphemeral(true).queue();
 
     }
