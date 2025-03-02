@@ -32,7 +32,8 @@ services:
       DATABASE_PASS: ${DB_PASSWORD}
       TOKEN: ${BOT_TOKEN}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: mariadb:10.6
@@ -47,6 +48,12 @@ services:
       - giveaway_db_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MARIADB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   giveaway_db_data:
