@@ -404,7 +404,7 @@ public class BotStart {
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Giveaway ID"));
 
             /*
-             * Команды
+             * Commands
              */
 
             CommandData checkCommand = Commands.slash("check-bot-permission", "Check bot permissions")
