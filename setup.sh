@@ -188,7 +188,7 @@ EOL
 # Create init.sql safely with here-document to avoid bash parsing the SQL content
 cat > init.sql << 'EOSQL'
 -- Create the required sequence
-CREATE SEQUENCE IF NOT EXISTS sequence_id_auto_gen START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS sequence_id_auto_gen START WITH 1 INCREMENT BY 100;
 
 -- Create tables if they don't exist
 CREATE TABLE IF NOT EXISTS `active_giveaways` (
