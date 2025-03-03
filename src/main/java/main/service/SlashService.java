@@ -1,159 +1,34 @@
-package main.config;
+package main.service;
 
-import jakarta.annotation.PostConstruct;
-import lombok.Getter;
-import main.controller.UpdateController;
-import main.core.CoreBot;
-import main.giveaway.Giveaway;
-import main.giveaway.GiveawayRegistry;
-import main.jsonparser.ParserClass;
-import main.model.entity.Scheduling;
-import main.model.entity.Settings;
-import main.model.repository.SchedulingRepository;
-import main.model.repository.SettingsRepository;
-import main.service.GiveawayUpdateListUser;
-import main.service.ScheduleStartService;
-import main.service.SlashService;
-import main.service.UploadGiveawaysService;
-import main.threads.StopGiveawayHandler;
 import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.OnlineStatus;
-import net.dv8tion.jda.api.entities.Activity;
-import net.dv8tion.jda.api.requests.GatewayIntent;
-import net.dv8tion.jda.api.utils.cache.CacheFlag;
-import org.json.JSONObject;
-import org.json.JSONTokener;
+import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.interactions.DiscordLocale;
+import net.dv8tion.jda.api.interactions.InteractionContextType;
+import net.dv8tion.jda.api.interactions.commands.Command;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
+import net.dv8tion.jda.api.interactions.commands.build.CommandData;
+import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
+import net.dv8tion.jda.api.requests.restaction.CommandListUpdateAction;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-@Configuration
-@EnableScheduling
-public class BotStart {
+import static net.dv8tion.jda.api.interactions.commands.OptionType.*;
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(BotStart.class.getName());
+@Service
+public class SlashService {
 
-    public static final String activity = "/start | ";
-    //String - guildLongId
-    private static final ConcurrentMap<Long, Settings> mapLanguages = new ConcurrentHashMap<>();
+    private final static Logger LOGGER = LoggerFactory.getLogger(SlashService.class.getName());
+    private final static Map<String, Long> commandMap = new HashMap<>();
 
-    @Getter
-    private static JDA jda;
-    private final JDABuilder jdaBuilder = JDABuilder.createDefault(Config.getTOKEN());
-
-    //REPOSITORY
-    private final UpdateController updateController;
-    private final SchedulingRepository schedulingRepository;
-    private final SettingsRepository settingsRepository;
-
-    private final GiveawayUpdateListUser updateGiveawayByGuild;
-
-    //Service
-    private final SlashService slashService;
-    private final ScheduleStartService scheduleStartService;
-    private final UploadGiveawaysService uploadGiveawaysService;
-
-    @Autowired
-    public BotStart(UpdateController updateController,
-                    SchedulingRepository schedulingRepository,
-                    SettingsRepository settingsRepository,
-                    GiveawayUpdateListUser updateGiveawayByGuild,
-                    SlashService slashService,
-                    ScheduleStartService scheduleStartService,
-                    UploadGiveawaysService uploadGiveawaysService) {
-        this.updateController = updateController;
-        this.schedulingRepository = schedulingRepository;
-        this.settingsRepository = settingsRepository;
-        this.updateGiveawayByGuild = updateGiveawayByGuild;
-        this.slashService = slashService;
-        this.scheduleStartService = scheduleStartService;
-        this.uploadGiveawaysService = uploadGiveawaysService;
-    }
-
-    @PostConstruct
-    public void startBot() {
-        try {
-            CoreBot coreBot = new CoreBot(updateController);
-            coreBot.init();
-
-            //Загружаем GiveawayRegistry
-            GiveawayRegistry.getInstance();
-            //Устанавливаем языки
-            setLanguages();
-            getLocalizationFromDB();
-            getSchedulingFromDB();
-
-            List<GatewayIntent> intents = Arrays.asList(
-                    GatewayIntent.GUILD_MEMBERS,
-                    GatewayIntent.GUILD_MESSAGES,
-                    GatewayIntent.GUILD_MESSAGE_REACTIONS,
-                    GatewayIntent.DIRECT_MESSAGES,
-                    GatewayIntent.DIRECT_MESSAGE_TYPING);
-
-            jdaBuilder.disableCache(
-                    CacheFlag.ACTIVITY,
-                    CacheFlag.VOICE_STATE,
-                    CacheFlag.EMOJI,
-                    CacheFlag.STICKER,
-                    CacheFlag.CLIENT_STATUS,
-                    CacheFlag.MEMBER_OVERRIDES,
-                    CacheFlag.ROLE_TAGS,
-                    CacheFlag.FORUM_TAGS,
-                    CacheFlag.ONLINE_STATUS,
-                    CacheFlag.SCHEDULED_EVENTS
-            );
-
-            jdaBuilder.enableIntents(intents);
-            jdaBuilder.setAutoReconnect(true);
-            jdaBuilder.setStatus(OnlineStatus.ONLINE);
-            jdaBuilder.setActivity(Activity.playing("Starting..."));
-            jdaBuilder.setBulkDeleteSplittingEnabled(false);
-            jdaBuilder.addEventListeners(new CoreBot(updateController));
-
-            jda = jdaBuilder.build();
-            jda.awaitReady();
-
-            //Получаем Giveaway и пользователей. Устанавливаем данные
-            uploadGiveawaysService.uploadGiveaways(updateController);
-
-            //Обновить команды
-            slashService.updateSlash(jda);
-
-            System.out.println("DevMode: " + Config.isIsDev() + " Time Build: " + "20:22");
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-        }
-    }
-
-    private void getSchedulingFromDB() {
-        try {
-            List<Scheduling> schedulingList = schedulingRepository.findAll();
-            GiveawayRegistry instance = GiveawayRegistry.getInstance();
-
-            for (Scheduling scheduling : schedulingList) {
-                String idSalt = scheduling.getIdSalt();
-                instance.putScheduling(idSalt, scheduling);
-            }
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-        }
-    }
-
-<<<<<<< HEAD
-    private void updateSlashCommands() {
+    public void updateSlash(JDA jda) {
         try {
             CommandListUpdateAction commands = jda.updateCommands();
 
@@ -188,7 +63,7 @@ public class BotStart {
                     .setNameLocalization(DiscordLocale.RUSSIAN, "язык")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Настройка языка бота"));
 
-            optionsSettings.add(new OptionData(STRING, "color", "Set the embed color. Example: #ff00ff")
+            optionsSettings.add(new OptionData(STRING, "color", "Set the embed color. Example usage: #ff00ff")
                     .setName("color")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "цвет")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить цвет embed. Пример использования: #ff00ff"));
@@ -196,7 +71,7 @@ public class BotStart {
             //Scheduling Giveaway
             List<OptionData> optionsScheduling = new ArrayList<>();
 
-            optionsScheduling.add(new OptionData(STRING, "start-time", "Set start time in UTC ±0 form. Example: 2023.04.29 17:00")
+            optionsScheduling.add(new OptionData(STRING, "start-time", "Set start time in UTC ±0 form. Example usage: 2023.04.29 17:00")
                     .setName("start-time")
                     .setRequired(true)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "время-начала")
@@ -207,12 +82,12 @@ public class BotStart {
                     .setNameLocalization(DiscordLocale.RUSSIAN, "текстовый-канал")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "По умолчанию текстовый канал, в котором была выполнена команда."));
 
-            optionsScheduling.add(new OptionData(STRING, "end-time", "Set end time in UTC ±0 form. Example: 2023.04.29 17:00")
+            optionsScheduling.add(new OptionData(STRING, "end-time", "Set end time in UTC ±0 form. Example usage: 2023.04.29 17:00")
                     .setName("end-time")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "время-окончания")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Укажите время окончания в формате UTC ±0. Пример использования: 2023.04.29 17:00"));
 
-            optionsScheduling.add(new OptionData(STRING, "title", "Set title for Giveaway")
+            optionsScheduling.add(new OptionData(STRING, "title", "Title for Giveaway")
                     .setName("title")
                     .setMaxLength(255)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "название")
@@ -230,7 +105,7 @@ public class BotStart {
                     .setNameLocalization(DiscordLocale.RUSSIAN, "выбрать")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Упоминание определенной @Роли"));
 
-            optionsScheduling.add(new OptionData(STRING, "role", "Set whether Giveaway is only for the role set in previous parameter")
+            optionsScheduling.add(new OptionData(STRING, "role", "Set whether Giveaway is for a specific role. Role is set in previous selection")
                     .addChoice("yes", "yes")
                     .setName("role")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "роль")
@@ -249,7 +124,7 @@ public class BotStart {
 
             //Start Giveaway
             List<OptionData> optionsStart = new ArrayList<>();
-            optionsStart.add(new OptionData(STRING, "title", "Set title for Giveaway")
+            optionsStart.add(new OptionData(STRING, "title", "Title for Giveaway")
                     .setName("title")
                     .setMaxLength(255)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "название")
@@ -262,23 +137,23 @@ public class BotStart {
                     .setNameLocalization(DiscordLocale.RUSSIAN, "победителей")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить количество победителей. По умолчанию 1"));
 
-            optionsStart.add(new OptionData(STRING, "duration", "Set duration. Example: 1h, 1d, 20m, 1h 30m 15s, 2022.08.18 13:48 (UTC ±0)")
+            optionsStart.add(new OptionData(STRING, "duration", "Set the duration. Examples: 5s, 20m, 10h, 1d. Or: 2021.11.16 16:00. UTC ±0")
                     .setName("duration")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "продолжительность")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить продолжительность. Примеры: 5s, 20m, 10h, 1d. Или: 2021.11.16 16:00. UTC ±0"));
 
-            optionsStart.add(new OptionData(ROLE, "mention", "Mention a specific @Role")
+            optionsStart.add(new OptionData(ROLE, "mention", "Mentioning a specific @Role")
                     .setName("mention")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "упомянуть")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Упоминание определенной @Роли"));
 
-            optionsStart.add(new OptionData(STRING, "role", "Set whether Giveaway is only for the role set in previous parameter")
+            optionsStart.add(new OptionData(STRING, "role", "Is Giveaway only for a specific role? Specify the role in the previous selection")
                     .addChoice("yes", "yes")
                     .setName("role")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "роль")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Giveaway только для определенной роли? Установите роль в предыдущем выборе"));
 
-            optionsStart.add(new OptionData(ATTACHMENT, "image", "Set image used in Giveaway embed")
+            optionsStart.add(new OptionData(ATTACHMENT, "image", "Set Image for Giveaway")
                     .setName("image")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "изображение")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить изображение для Giveaway"));
@@ -291,14 +166,14 @@ public class BotStart {
 
             List<OptionData> predefined = new ArrayList<>();
 
-            predefined.add(new OptionData(STRING, "title", "Set title for Giveaway")
+            predefined.add(new OptionData(STRING, "title", "Title for Giveaway")
                     .setName("title")
                     .setMaxLength(255)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "название")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Название для Giveaway")
                     .setRequired(true));
 
-            predefined.add(new OptionData(INTEGER, "winners", "Set number of winners, if not set defaults to 1")
+            predefined.add(new OptionData(INTEGER, "winners", "Set number of winners")
                     .setName("winners")
                     .setMinValue(1)
                     .setMaxValue(30)
@@ -324,25 +199,25 @@ public class BotStart {
             //giveaway-edit
             List<OptionData> giveawayEditData = new ArrayList<>();
 
-            giveawayEditData.add(new OptionData(STRING, "duration", "Set duration. Example: 1h, 1d, 20m, 1h 30m 15s, 2022.08.18 13:48 (UTC ±0)")
+            giveawayEditData.add(new OptionData(STRING, "duration", "Examples: 5s, 20m, 10h, 1d. Or: 2021.11.16 16:00. Only in this style and UTC ±0")
                     .setName("duration")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "продолжительность")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Примеры: 5s, 20m, 10h, 1d. Или: 2021.11.16 16:00. Только в этом стиле и UTC ±0"));
 
-            giveawayEditData.add(new OptionData(INTEGER, "winners", "Set number of winners, if not set defaults to 1")
+            giveawayEditData.add(new OptionData(INTEGER, "winners", "Set number of winners")
                     .setName("winners")
                     .setMinValue(1)
                     .setMaxValue(30)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "победителей")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить количество победителей."));
 
-            giveawayEditData.add(new OptionData(STRING, "title", "Set title for Giveaway")
+            giveawayEditData.add(new OptionData(STRING, "title", "Title for Giveaway")
                     .setName("title")
                     .setMaxLength(255)
                     .setNameLocalization(DiscordLocale.RUSSIAN, "название")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Название для Giveaway"));
 
-            giveawayEditData.add(new OptionData(ATTACHMENT, "image", "Set image used in Giveaway embed")
+            giveawayEditData.add(new OptionData(ATTACHMENT, "image", "Set Image for Giveaway")
                     .setName("image")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "изображение")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить изображение для Giveaway"));
@@ -365,7 +240,7 @@ public class BotStart {
                     .setNameLocalization(DiscordLocale.RUSSIAN, "id-розыгрыша")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Giveaway ID или message ID с упоминаниями пользователей"));
 
-            reroll.add(new OptionData(INTEGER, "winners", "Set number of winners, if not set defaults to 1")
+            reroll.add(new OptionData(INTEGER, "winners", "Set count winners.")
                     .setName("winners")
                     .setMinValue(1)
                     .setMaxValue(30)
@@ -373,7 +248,7 @@ public class BotStart {
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Установить количество победителей."));
 
             List<OptionData> botPermissions = new ArrayList<>();
-            botPermissions.add(new OptionData(CHANNEL, "text-channel", "Check bot permissions in a specific channel")
+            botPermissions.add(new OptionData(CHANNEL, "text-channel", "Check permissions of a specific channel")
                     .setName("text-channel")
                     .setNameLocalization(DiscordLocale.RUSSIAN, "текстовой-канал")
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Проверка разрешений определенного канала"));
@@ -385,10 +260,10 @@ public class BotStart {
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Giveaway ID"));
 
             /*
-             * Commands
+             * Команды
              */
 
-            CommandData checkCommand = Commands.slash("check-bot-permission", "Check bot permissions")
+            CommandData checkCommand = Commands.slash("check", "Check permissions of bot")
                     .addOptions(botPermissions)
                     .setContexts(InteractionContextType.GUILD)
                     .setDescriptionLocalization(DiscordLocale.RUSSIAN, "Проверка разрешений бота");
@@ -474,102 +349,23 @@ public class BotStart {
                             cancelCommand)
                     .queue();
 
+            List<Command> commandsList = jda.retrieveCommands().submit().get();
+
+            for (Command command : commandsList) {
+                String name = command.getName();
+                long id = command.getIdLong();
+                System.out.printf("%s [%s]%n", id, name);
+                commandMap.put(name, id);
+            }
+
             System.out.println("Готово");
         } catch (Exception e) {
             LOGGER.error(e.getMessage(), e);
         }
     }
 
-=======
->>>>>>> main
-    @Scheduled(fixedDelay = 120, initialDelay = 8, timeUnit = TimeUnit.SECONDS)
-    private void updateActivity() {
-        if (!Config.isIsDev()) {
-            int serverCount = BotStart.jda.getGuilds().size();
-            BotStart.jda.getPresence().setActivity(Activity.playing(BotStart.activity + serverCount + " guilds"));
-        } else {
-            BotStart.jda.getPresence().setActivity(Activity.playing("Develop"));
-        }
-    }
-
-    @Scheduled(fixedDelay = 5, initialDelay = 5, timeUnit = TimeUnit.SECONDS)
-    private void scheduleStartGiveaway() {
-        try {
-            scheduleStartService.scheduleStart(updateController, jda);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-        }
-    }
-
-    public void setLanguages() {
-        try {
-            List<String> listLanguages = new ArrayList<>();
-            listLanguages.add("rus");
-            listLanguages.add("eng");
-
-            for (String listLanguage : listLanguages) {
-                InputStream inputStream = new ClassPathResource("json/" + listLanguage + ".json").getInputStream();
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-                JSONObject jsonObject = new JSONObject(new JSONTokener(reader));
-
-                for (String o : jsonObject.keySet()) {
-                    if (listLanguage.equals("rus")) {
-                        ParserClass.russian.put(o, String.valueOf(jsonObject.get(o)));
-                    } else {
-                        ParserClass.english.put(o, String.valueOf(jsonObject.get(o)));
-                    }
-                }
-                reader.close();
-                inputStream.close();
-                reader.close();
-            }
-            System.out.println("setLanguages()");
-        } catch (Exception e) {
-            LOGGER.info(e.getMessage());
-        }
-    }
-
-    @Scheduled(fixedDelay = 2, initialDelay = 1, timeUnit = TimeUnit.SECONDS)
-    public void stopGiveawayTimer() {
-        GiveawayRegistry instance = GiveawayRegistry.getInstance();
-        List<Giveaway> giveawayDataList = new LinkedList<>(instance.getAllGiveaway());
-        StopGiveawayHandler stopGiveawayHandler = new StopGiveawayHandler();
-        for (Giveaway giveaway : giveawayDataList) {
-            try {
-                stopGiveawayHandler.handleGiveaway(giveaway);
-            } catch (Exception e) {
-                LOGGER.error(e.getMessage(), e);
-            }
-        }
-    }
-
-    @Scheduled(fixedDelay = 150, initialDelay = 25, timeUnit = TimeUnit.SECONDS)
-    public void updateUserList() {
-        GiveawayRegistry instance = GiveawayRegistry.getInstance();
-        List<Giveaway> giveawayDataList = new LinkedList<>(instance.getAllGiveaway());
-        for (Giveaway giveaway : giveawayDataList) {
-            try {
-                updateGiveawayByGuild.updateGiveawayByGuild(giveaway);
-                Thread.sleep(2000L);
-            } catch (Exception e) {
-                LOGGER.error(e.getMessage(), e);
-            }
-        }
-    }
-
-    private void getLocalizationFromDB() {
-        try {
-            List<Settings> settingsList = settingsRepository.findAll();
-            for (Settings settings : settingsList) {
-                mapLanguages.put(settings.getServerId(), settings);
-            }
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-        }
-    }
-
-    public static Map<Long, Settings> getMapLanguages() {
-        return mapLanguages;
+    @Nullable
+    public static Long getCommandId(String commandName) {
+        return commandMap.get(commandName);
     }
 }
